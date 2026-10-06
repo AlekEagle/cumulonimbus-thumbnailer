@@ -17,6 +17,7 @@ function shouldCompress(req: Express.Request, res: Express.Response): boolean {
   if (req.headers['x-no-compression']) {
     return false;
   }
+  return _filter(req, res);
 }
 
 const port: number =
@@ -29,7 +30,7 @@ if (process.env.DEBUG) {
   app.use(DevelopmentCORS());
 }
 
-if (!existsSync(process.env.OUTPUT_PATH)) mkdirSync(process.env.OUTPUT_PATH);
+if (!existsSync(process.env.OUTPUT_PATH!)) mkdirSync(process.env.OUTPUT_PATH!);
 
 app.all('/', async (req, res) => {
   res.status(200).json({ hello: 'world', version: packageJSON.version });
