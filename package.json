@@ -1,6 +1,6 @@
 {
   "name": "cumulonimbus-thumbnailer",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "The thumbnail generation server for Cumulonimbus.",
   "main": "dist/index.js",
   "scripts": {
@@ -20,7 +20,7 @@
     "@types/compression": "^1.7.5",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.5",
-    "typescript": "^5.7.3"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "chalk": "^5.4.1",

@@ -5,6 +5,7 @@ import Logger, { Level } from './Logger';
 import compression, { filter as _filter } from 'compression';
 import DevelopmentCORS from './DevelopmentCORS';
 import { config } from 'dotenv';
+import { join } from 'node:path';
 const packageJSON = JSON.parse(readFileSync('./package.json', 'utf8'));
 
 config();
@@ -37,16 +38,15 @@ app.all('/', async (req, res) => {
 });
 
 app.get('/:file', async (req, res) => {
-  if (existsSync(`${process.env.OUTPUT_PATH}${req.params.file}.webp`)) {
+  const path = join(process.env.OUTPUT_PATH!, `${req.params.file}.webp`);
+  if (existsSync(path)) {
     console.debug(
       `Preview cached for ${req.params.file}, not generating another.`,
     );
-    res
-      .append('Content-Type', 'image/webp')
-      .sendFile(`${process.env.OUTPUT_PATH}${req.params.file}.webp`);
+    res.append('Content-Type', 'image/webp').sendFile(path);
     return;
   }
-  if (!existsSync(`${process.env.BASE_UPLOAD_PATH}${req.params.file}`)) {
+  if (!existsSync(join(process.env.BASE_UPLOAD_PATH!, req.params.file))) {
     console.debug('File does not exist. File: %s', req.params.file);
     res.status(404).end();
     return;
@@ -68,9 +68,7 @@ app.get('/:file', async (req, res) => {
     if (status !== 200) {
       res.status(status).end();
     } else {
-      res
-        .append('Content-Type', 'image/webp')
-        .sendFile(`${process.env.OUTPUT_PATH}${req.params.file}.webp`);
+      res.append('Content-Type', 'image/webp').sendFile(path);
     }
   });
 });

@@ -4,6 +4,7 @@ import { fileTypeFromFile } from 'file-type';
 import puppeteer, { Browser } from 'puppeteer';
 import { unlink, chmod } from 'fs/promises';
 import { config } from 'dotenv';
+import { join } from 'node:path';
 
 // Configure us some environment variables
 config();
@@ -82,9 +83,10 @@ async function hasAudioStream(file: string): Promise<boolean> {
 // This is a worker thread, so we can't run it as the main thread
 if (worker.isMainThread) throw new Error("can't be ran as main thread");
 (async function () {
+  const path = join(process.env.OUTPUT_PATH!, `${worker.workerData.file}.webp`);
   try {
     let a = await fileTypeFromFile(
-      `${process.env.BASE_UPLOAD_PATH}${worker.workerData.file}`,
+      join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
     );
     if (a === undefined && !worker.workerData.file.match(/\.html?$/)) {
       worker.parentPort!.postMessage(415);
@@ -96,24 +98,21 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
       page.setViewport({ width: 256, height: 256 });
       restartTimeout(browser);
       await page.goto(
-        `file://${process.env.BASE_UPLOAD_PATH}${worker.workerData.file}`,
+        `file://${join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file)}`,
         {
           waitUntil: 'networkidle2',
         },
       );
       await page.screenshot({
-        path: `${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
+        path: path,
       });
       restartTimeout(browser);
-      await chmod(
-        `${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
-        0o666,
-      );
+      await chmod(path, 0o666);
       worker.parentPort!.postMessage(200);
       process.exit(0);
     } else if (
       await hasVideoOrImageStream(
-        `${process.env.BASE_UPLOAD_PATH}${worker.workerData.file}`,
+        join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
       )
     ) {
       restartTimeout(null);
@@ -121,12 +120,12 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
         'ffmpeg',
         [
           '-i',
-          `${process.env.BASE_UPLOAD_PATH}${worker.workerData.file}`,
+          join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
           '-vf',
           'scale=256:256:force_original_aspect_ratio=1,format=rgba,pad=256:256:(ow-iw)/2:(oh-ih)/2:color=#00000000',
           '-vframes',
           '1',
-          `/tmp/cumulonimbus-preview-cache/${worker.workerData.file}.webp`,
+          path,
         ],
         15000, // bounded, in line with the 15s worker restart timeout
       );
@@ -149,7 +148,7 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
           '256',
           '-scale-to',
           '256',
-          `${process.env.BASE_UPLOAD_PATH}${worker.workerData.file}`,
+          join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
           `/tmp/${worker.workerData.file}`,
         ],
         15000,
@@ -159,16 +158,16 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
         'ffmpeg',
         [
           '-i',
-          `/tmp/${worker.workerData.file}.png`,
+          join('/tmp', `${worker.workerData.file}.png`),
           '-vf',
           'scale=256:256:force_original_aspect_ratio=1,format=rgba,pad=256:256:(ow-iw)/2:(oh-ih)/2:color=#00000000',
           '-vframes',
           '1',
-          `${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
+          path,
         ],
         15000,
       );
-      await unlink(`/tmp/${worker.workerData.file}.png`);
+      await unlink(join('/tmp', `${worker.workerData.file}.png`));
       worker.parentPort!.postMessage(200);
       process.exit(0);
     } else if (a!.mime.startsWith('font')) {
@@ -177,7 +176,7 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
       page.setViewport({ width: 256, height: 256 });
       restartTimeout(browser);
       await page.goto(
-        `file://${process.cwd()}/font-renderer.html?font=${
+        `file://${join(process.cwd(), 'font-renderer.html')}?font=${
           worker.workerData.file
         }`,
         {
@@ -186,13 +185,13 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
       );
       restartTimeout(browser);
       await page.screenshot({
-        path: `${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
+        path: path,
       });
       worker.parentPort!.postMessage(200);
       process.exit(0);
     } else if (
       await hasAudioStream(
-        `${process.env.BASE_UPLOAD_PATH}${worker.workerData.file}`,
+        join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
       )
     ) {
       restartTimeout(null);
@@ -200,12 +199,12 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
         'ffmpeg',
         [
           '-i',
-          `${process.env.BASE_UPLOAD_PATH}${worker.workerData.file}`,
+          join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
           '-filter_complex',
           'showwavespic=256x256',
           '-frames:v',
           '1',
-          `${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
+          path,
         ],
         15000,
       );
