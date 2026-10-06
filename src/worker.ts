@@ -1,67 +1,93 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import worker from 'worker_threads';
-import fileType from 'file-type';
+import { fileTypeFromFile } from 'file-type';
 import puppeteer, { Browser } from 'puppeteer';
-import { unlink } from 'fs/promises';
+import { unlink, chmod } from 'fs/promises';
 import { config } from 'dotenv';
 
 // Configure us some environment variables
 config();
 
-let timeout: ReturnType<typeof setTimeout> = null;
+let timeout: ReturnType<typeof setTimeout> | null = null;
 
 function restartTimeout(browser: Browser | null) {
   if (timeout !== null) clearTimeout(timeout);
   timeout = setTimeout(() => {
     if (browser !== null) browser.close();
-    worker.parentPort.postMessage(408);
+    worker.parentPort!.postMessage(408);
     process.exit(1);
   }, 15e3);
 }
 
-// Test if file has a video stream or image stream
-function hasVideoOrImageStream(file: string): Promise<boolean> {
-  return new Promise((res) => {
-    exec(
-      `ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 ${file}`,
+function execFileP(
+  cmd: string,
+  args: string[],
+  timeoutMs?: number,
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      cmd,
+      args,
+      { timeout: timeoutMs },
       (error, stdout, stderr) => {
-        if (error) {
-          console.error(error, stderr, stdout);
-          res(false);
-        } else {
-          res(stdout.trim() === 'video');
-        }
+        if (error) return reject(error);
+        resolve({ stdout, stderr });
       },
     );
+    // If the process fails to even spawn, make sure it can't linger.
+    child.on('error', reject);
   });
 }
 
+// Test if file has a video stream or image stream
+async function hasVideoOrImageStream(file: string): Promise<boolean> {
+  try {
+    const { stdout } = await execFileP('ffprobe', [
+      '-v',
+      'error',
+      '-select_streams',
+      'v:0',
+      '-show_entries',
+      'stream=codec_type',
+      '-of',
+      'default=noprint_wrappers=1:nokey=1',
+      file,
+    ]);
+    return stdout.trim() === 'video';
+  } catch {
+    return false;
+  }
+}
+
 // Test if file has an audio stream
-function hasAudioStream(file: string): Promise<boolean> {
-  return new Promise((res) => {
-    exec(
-      `ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 ${file}`,
-      (error, stdout, stderr) => {
-        if (error) {
-          console.error(error, stderr, stdout);
-          res(false);
-        } else {
-          res(stdout.trim() === 'audio');
-        }
-      },
-    );
-  });
+async function hasAudioStream(file: string): Promise<boolean> {
+  try {
+    const { stdout } = await execFileP('ffprobe', [
+      '-v',
+      'error',
+      '-select_streams',
+      'a:0',
+      '-show_entries',
+      'stream=codec_type',
+      '-of',
+      'default=noprint_wrappers=1:nokey=1',
+      file,
+    ]);
+    return stdout.trim() === 'audio';
+  } catch {
+    return false;
+  }
 }
 
 // This is a worker thread, so we can't run it as the main thread
 if (worker.isMainThread) throw new Error("can't be ran as main thread");
 (async function () {
   try {
-    let a = await fileType.fromFile(
+    let a = await fileTypeFromFile(
       `${process.env.BASE_UPLOAD_PATH}${worker.workerData.file}`,
     );
     if (a === undefined && !worker.workerData.file.match(/\.html?$/)) {
-      worker.parentPort.postMessage(415);
+      worker.parentPort!.postMessage(415);
       process.exit(0);
     }
     if (worker.workerData.file.match(/\.html?$/)) {
@@ -79,67 +105,73 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
         path: `${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
       });
       restartTimeout(browser);
-      exec(
-        `chmod +r+w ${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
-        (error, stdout, stderr) => {
-          if (error) {
-            worker.parentPort.postMessage(500);
-            console.error(error, stderr, stdout);
-            process.exit(0);
-          } else {
-            worker.parentPort.postMessage(200);
-            process.exit(0);
-          }
-        },
+      await chmod(
+        `${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
+        0o666,
       );
+      worker.parentPort!.postMessage(200);
+      process.exit(0);
     } else if (
       await hasVideoOrImageStream(
         `${process.env.BASE_UPLOAD_PATH}${worker.workerData.file}`,
       )
     ) {
       restartTimeout(null);
-      exec(
-        `ffmpeg -i ${process.env.BASE_UPLOAD_PATH}${worker.workerData.file} -vf 'scale=256:256:force_original_aspect_ratio=1,format=rgba,pad=256:256:(ow-iw)/2:(oh-ih)/2:color=#00000000' -vframes 1 /tmp/cumulonimbus-preview-cache/${worker.workerData.file}.webp`,
-        (error, stdout, stderr) => {
-          if (error) {
-            worker.parentPort.postMessage(500);
-            console.error(error, stderr, stdout);
-            process.exit(0);
-          } else {
-            worker.parentPort.postMessage(200);
-            process.exit(0);
-          }
-        },
+      await execFileP(
+        'ffmpeg',
+        [
+          '-i',
+          `${process.env.BASE_UPLOAD_PATH}${worker.workerData.file}`,
+          '-vf',
+          'scale=256:256:force_original_aspect_ratio=1,format=rgba,pad=256:256:(ow-iw)/2:(oh-ih)/2:color=#00000000',
+          '-vframes',
+          '1',
+          `/tmp/cumulonimbus-preview-cache/${worker.workerData.file}.webp`,
+        ],
+        15000, // bounded, in line with the 15s worker restart timeout
       );
-    } else if (a.mime === 'application/pdf') {
+      worker.parentPort!.postMessage(200);
+      process.exit(0);
+    } else if (a!.mime === 'application/pdf') {
       restartTimeout(null);
-      exec(
-        `pdftoppm -singlefile -png -x 0 -y 0 -W 256 -H 256 -scale-to 256 ${process.env.BASE_UPLOAD_PATH}${worker.workerData.file} /tmp/${worker.workerData.file}`,
-        (error, stdout, stderr) => {
-          if (error) {
-            worker.parentPort.postMessage(500);
-            console.error(error, stderr, stdout);
-            process.exit(0);
-          } else {
-            restartTimeout(null);
-            exec(
-              `ffmpeg -i /tmp/${worker.workerData.file}.png -vf 'scale=256:256:force_original_aspect_ratio=1,format=rgba,pad=256:256:(ow-iw)/2:(oh-ih)/2:color=#00000000' -vframes 1 ${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
-              async (error, stdout, stderr) => {
-                if (error) {
-                  worker.parentPort.postMessage(500);
-                  console.error(error, stderr, stdout);
-                  process.exit(0);
-                } else {
-                  await unlink(`/tmp/${worker.workerData.file}.png`);
-                  worker.parentPort.postMessage(200);
-                  process.exit(0);
-                }
-              },
-            );
-          }
-        },
+      await execFileP(
+        'pdftoppm',
+        [
+          '-singlefile',
+          '-png',
+          '-x',
+          '0',
+          '-y',
+          '0',
+          '-W',
+          '256',
+          '-H',
+          '256',
+          '-scale-to',
+          '256',
+          `${process.env.BASE_UPLOAD_PATH}${worker.workerData.file}`,
+          `/tmp/${worker.workerData.file}`,
+        ],
+        15000,
       );
-    } else if (a.mime.startsWith('font')) {
+      restartTimeout(null);
+      await execFileP(
+        'ffmpeg',
+        [
+          '-i',
+          `/tmp/${worker.workerData.file}.png`,
+          '-vf',
+          'scale=256:256:force_original_aspect_ratio=1,format=rgba,pad=256:256:(ow-iw)/2:(oh-ih)/2:color=#00000000',
+          '-vframes',
+          '1',
+          `${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
+        ],
+        15000,
+      );
+      await unlink(`/tmp/${worker.workerData.file}.png`);
+      worker.parentPort!.postMessage(200);
+      process.exit(0);
+    } else if (a!.mime.startsWith('font')) {
       const browser = await puppeteer.launch(),
         page = await browser.newPage();
       page.setViewport({ width: 256, height: 256 });
@@ -156,7 +188,7 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
       await page.screenshot({
         path: `${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
       });
-      worker.parentPort.postMessage(200);
+      worker.parentPort!.postMessage(200);
       process.exit(0);
     } else if (
       await hasAudioStream(
@@ -164,25 +196,27 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
       )
     ) {
       restartTimeout(null);
-      exec(
-        `ffmpeg -i ${process.env.BASE_UPLOAD_PATH}${worker.workerData.file} -filter_complex 'showwavespic=256x256' -frames:v 1 ${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
-        (error, stdout, stderr) => {
-          if (error) {
-            worker.parentPort.postMessage(500);
-            console.error(error, stderr, stdout);
-            process.exit(0);
-          } else {
-            worker.parentPort.postMessage(200);
-            process.exit(0);
-          }
-        },
+      await execFileP(
+        'ffmpeg',
+        [
+          '-i',
+          `${process.env.BASE_UPLOAD_PATH}${worker.workerData.file}`,
+          '-filter_complex',
+          'showwavespic=256x256',
+          '-frames:v',
+          '1',
+          `${process.env.OUTPUT_PATH}${worker.workerData.file}.webp`,
+        ],
+        15000,
       );
+      worker.parentPort!.postMessage(200);
+      process.exit(0);
     } else {
-      worker.parentPort.postMessage(415);
+      worker.parentPort!.postMessage(415);
       process.exit(0);
     }
   } catch (e) {
-    worker.parentPort.postMessage(500);
+    worker.parentPort!.postMessage(500);
     console.error(e);
     process.exit(0);
   }
