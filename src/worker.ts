@@ -83,7 +83,11 @@ async function hasAudioStream(file: string): Promise<boolean> {
 // This is a worker thread, so we can't run it as the main thread
 if (worker.isMainThread) throw new Error("can't be ran as main thread");
 (async function () {
-  const path = join(process.env.OUTPUT_PATH!, `${worker.workerData.file}.webp`);
+  const inputPath = join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file);
+  const outputPath = join(
+    process.env.OUTPUT_PATH!,
+    `${worker.workerData.file}.webp`,
+  );
   try {
     let a = await fileTypeFromFile(
       join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
@@ -104,10 +108,10 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
         },
       );
       await page.screenshot({
-        path: path,
+        path: outputPath,
       });
       restartTimeout(browser);
-      await chmod(path, 0o666);
+      await chmod(outputPath, 0o666);
       worker.parentPort!.postMessage(200);
       process.exit(0);
     } else if (
@@ -125,7 +129,7 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
           'scale=256:256:force_original_aspect_ratio=1,format=rgba,pad=256:256:(ow-iw)/2:(oh-ih)/2:color=#00000000',
           '-vframes',
           '1',
-          path,
+          outputPath,
         ],
         15000, // bounded, in line with the 15s worker restart timeout
       );
@@ -163,7 +167,7 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
           'scale=256:256:force_original_aspect_ratio=1,format=rgba,pad=256:256:(ow-iw)/2:(oh-ih)/2:color=#00000000',
           '-vframes',
           '1',
-          path,
+          outputPath,
         ],
         15000,
       );
@@ -185,7 +189,7 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
       );
       restartTimeout(browser);
       await page.screenshot({
-        path: path,
+        path: outputPath,
       });
       worker.parentPort!.postMessage(200);
       process.exit(0);
@@ -204,7 +208,7 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
           'showwavespic=256x256',
           '-frames:v',
           '1',
-          path,
+          outputPath,
         ],
         15000,
       );

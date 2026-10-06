@@ -38,15 +38,16 @@ app.all('/', async (req, res) => {
 });
 
 app.get('/:file', async (req, res) => {
-  const path = join(process.env.OUTPUT_PATH!, `${req.params.file}.webp`);
-  if (existsSync(path)) {
+  const inputPath = join(process.env.BASE_UPLOAD_PATH!, req.params.file);
+  const outputPath = join(process.env.OUTPUT_PATH!, `${req.params.file}.webp`);
+  if (existsSync(outputPath)) {
     console.debug(
       `Preview cached for ${req.params.file}, not generating another.`,
     );
-    res.append('Content-Type', 'image/webp').sendFile(path);
+    res.append('Content-Type', 'image/webp').sendFile(outputPath);
     return;
   }
-  if (!existsSync(join(process.env.BASE_UPLOAD_PATH!, req.params.file))) {
+  if (!existsSync(inputPath)) {
     console.debug('File does not exist. File: %s', req.params.file);
     res.status(404).end();
     return;
@@ -68,7 +69,7 @@ app.get('/:file', async (req, res) => {
     if (status !== 200) {
       res.status(status).end();
     } else {
-      res.append('Content-Type', 'image/webp').sendFile(path);
+      res.append('Content-Type', 'image/webp').sendFile(outputPath);
     }
   });
 });
