@@ -22,7 +22,7 @@ function shouldCompress(req: Express.Request, res: Express.Response): boolean {
 }
 
 const port: number =
-  8100 + (!process.env.instance ? 0 : Number(process.env.instance));
+  8100 + (!process.env.INSTANCE ? 0 : Number(process.env.INSTANCE));
 const app = Express();
 
 app.use(compression({ filter: shouldCompress }));
@@ -74,6 +74,6 @@ app.get('/:file', async (req, res) => {
   });
 });
 
-app.listen(port, () => {
+app.listen(port, '127.0.0.1', () => {
   console.log(`Listening on port ${port}.`);
 });

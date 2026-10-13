@@ -1,0 +1,19 @@
+[Unit]
+Description=Cumulonimbus Thumbnailer Instance #%i
+Requires=network-online.target
+Requires=nginx.service
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=INSTANCE=%i
+Restart=always
+# TO BE FILLED BY OEM
+User=cumulonimbus
+Group=cumulonimbus
+WorkingDirectory=/opt/cumulonimbus/thumbnailer
+# END OF TO BE FILLED BY OEM
+ExecStart=/usr/bin/node --use-system-ca ./
+
+[Install]
+WantedBy=multi-user.target
