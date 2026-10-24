@@ -40,7 +40,7 @@ app.all('/', async (req, res) => {
 });
 
 app.get('/:file', async (req, res) => {
-  if (activeWorkers.size >= Number(process.env.MAX_WORKERS)) {
+  if (activeWorkers.size >= Number(process.env.MAX_WORKERS ?? 50)) {
     res.status(429).end();
     return;
   }
