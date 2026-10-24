@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <script>
@@ -43,7 +43,7 @@
       const style = document.createElement('style');
       style.innerHTML = `@font-face {
           font-family: 'rendered-font';
-          src: url('/var/www-uploads/${font}');
+          src: url('file://${font}');
         }`;
 
       document.head.appendChild(style);

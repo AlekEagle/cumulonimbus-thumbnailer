@@ -89,24 +89,38 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
     `${worker.workerData.file}.webp`,
   );
   try {
-    let a = await fileTypeFromFile(
-      join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
-    );
+    let a = await fileTypeFromFile(inputPath);
     if (a === undefined && !worker.workerData.file.match(/\.html?$/)) {
       worker.parentPort!.postMessage(415);
       process.exit(0);
     }
     if (worker.workerData.file.match(/\.html?$/)) {
-      const browser = await puppeteer.launch(),
+      const browser = await puppeteer.launch({
+          args: [
+            // Layer 2: stop Chromium itself phoning home (update checks, telemetry)
+            '--disable-background-networking',
+            // Layer 3: kill all DNS resolution — hostname-based SSRF dies instantly
+            '--host-resolver-rules=MAP * ~NOTFOUND',
+          ],
+        }),
         page = await browser.newPage();
+      await page.setRequestInterception(true);
+      page.on('request', (req) => {
+        const u = req.url();
+        if (
+          u.startsWith(`file://${process.env.BASE_UPLOAD_PATH}/`) || // the doc + relative local assets
+          u.startsWith(`file://${process.cwd()}/`) || // font-renderer.html (font path only)
+          u.startsWith('data:')
+        ) {
+          return req.continue();
+        }
+        req.abort(); // http/https/ws/wss/ftp/chrome:// — everything else
+      });
       page.setViewport({ width: 256, height: 256 });
       restartTimeout(browser);
-      await page.goto(
-        `file://${join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file)}`,
-        {
-          waitUntil: 'networkidle2',
-        },
-      );
+      await page.goto(`file://${inputPath}`, {
+        waitUntil: 'networkidle2',
+      });
       await page.screenshot({
         path: outputPath,
       });
@@ -114,17 +128,13 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
       await chmod(outputPath, 0o666);
       worker.parentPort!.postMessage(200);
       process.exit(0);
-    } else if (
-      await hasVideoOrImageStream(
-        join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
-      )
-    ) {
+    } else if (await hasVideoOrImageStream(inputPath)) {
       restartTimeout(null);
       await execFileP(
         'ffmpeg',
         [
           '-i',
-          join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
+          inputPath,
           '-vf',
           'scale=256:256:force_original_aspect_ratio=1,format=rgba,pad=256:256:(ow-iw)/2:(oh-ih)/2:color=#00000000',
           '-vframes',
@@ -152,7 +162,7 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
           '256',
           '-scale-to',
           '256',
-          join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
+          inputPath,
           `/tmp/${worker.workerData.file}`,
         ],
         15000,
@@ -180,9 +190,9 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
       page.setViewport({ width: 256, height: 256 });
       restartTimeout(browser);
       await page.goto(
-        `file://${join(process.cwd(), 'font-renderer.html')}?font=${
-          worker.workerData.file
-        }`,
+        `file://${join(process.cwd(), 'font-renderer.html')}?font=${encodeURIComponent(
+          inputPath,
+        )}`,
         {
           waitUntil: 'load',
         },
@@ -193,17 +203,13 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
       });
       worker.parentPort!.postMessage(200);
       process.exit(0);
-    } else if (
-      await hasAudioStream(
-        join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
-      )
-    ) {
+    } else if (await hasAudioStream(inputPath)) {
       restartTimeout(null);
       await execFileP(
         'ffmpeg',
         [
           '-i',
-          join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file),
+          inputPath,
           '-filter_complex',
           'showwavespic=256x256',
           '-frames:v',

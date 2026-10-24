@@ -1,6 +1,6 @@
 {
   "name": "cumulonimbus-thumbnailer",
-  "version": "2.3.2",
+  "version": "2.4.0",
   "description": "The thumbnail generation server for Cumulonimbus.",
   "main": "dist/index.js",
   "scripts": {
@@ -17,20 +17,20 @@
   },
   "homepage": "https://github.com/AlekEagle/cumulonimbus-thumbnailer#readme",
   "devDependencies": {
-    "@types/compression": "^1.7.5",
-    "@types/express": "^5.0.0",
-    "@types/node": "^22.10.5",
+    "@types/compression": "^1.8.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "chalk": "^5.4.1",
-    "compression": "^1.7.4",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "file-type": "^22.1.1",
-    "puppeteer": "^25.12.0"
+    "chalk": "^6.0.1",
+    "compression": "^1.8.2",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "file-type": "^22.2.0",
+    "puppeteer": "^25.16.0"
   },
   "allowScripts": {
-    "puppeteer@25.12.0": true
+    "puppeteer@25.16.0": true
   }
 }
