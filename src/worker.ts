@@ -4,7 +4,7 @@ import { fileTypeFromFile } from 'file-type';
 import puppeteer, { Browser } from 'puppeteer';
 import { unlink, chmod } from 'fs/promises';
 import { config } from 'dotenv';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 
 // Configure us some environment variables
 config();
@@ -108,7 +108,7 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
       page.on('request', (req) => {
         const u = req.url();
         if (
-          u.startsWith(`file://${process.env.BASE_UPLOAD_PATH}/`) || // the doc + relative local assets
+          u.startsWith(`file://${dirname(inputPath)}/`) || // the doc + relative local assets
           u.startsWith(`file://${process.cwd()}/`) || // font-renderer.html (font path only)
           u.startsWith('data:')
         ) {

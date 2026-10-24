@@ -1,6 +1,6 @@
 {
   "name": "cumulonimbus-thumbnailer",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "The thumbnail generation server for Cumulonimbus.",
   "main": "dist/index.js",
   "scripts": {
