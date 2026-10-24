@@ -4,7 +4,7 @@ import { fileTypeFromFile } from 'file-type';
 import puppeteer, { Browser } from 'puppeteer';
 import { unlink, chmod } from 'fs/promises';
 import { config } from 'dotenv';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 
 // Configure us some environment variables
 config();
@@ -83,18 +83,16 @@ async function hasAudioStream(file: string): Promise<boolean> {
 // This is a worker thread, so we can't run it as the main thread
 if (worker.isMainThread) throw new Error("can't be ran as main thread");
 (async function () {
-  const inputPath = join(process.env.BASE_UPLOAD_PATH!, worker.workerData.file);
-  const outputPath = join(
-    process.env.OUTPUT_PATH!,
-    `${worker.workerData.file}.webp`,
-  );
+  const inputPath = worker.workerData.inputPath;
+  const file = basename(worker.workerData.inputPath);
+  const outputPath = worker.workerData.outputPath;
   try {
     let a = await fileTypeFromFile(inputPath);
-    if (a === undefined && !worker.workerData.file.match(/\.html?$/)) {
+    if (a === undefined && !file.match(/\.html?$/)) {
       worker.parentPort!.postMessage(415);
       process.exit(0);
     }
-    if (worker.workerData.file.match(/\.html?$/)) {
+    if (file.match(/\.html?$/)) {
       const browser = await puppeteer.launch({
           args: [
             // Layer 2: stop Chromium itself phoning home (update checks, telemetry)
@@ -163,7 +161,7 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
           '-scale-to',
           '256',
           inputPath,
-          `/tmp/${worker.workerData.file}`,
+          `/tmp/${file}`,
         ],
         15000,
       );
@@ -172,7 +170,7 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
         'ffmpeg',
         [
           '-i',
-          join('/tmp', `${worker.workerData.file}.png`),
+          join('/tmp', `${file}.png`),
           '-vf',
           'scale=256:256:force_original_aspect_ratio=1,format=rgba,pad=256:256:(ow-iw)/2:(oh-ih)/2:color=#00000000',
           '-vframes',
@@ -181,7 +179,7 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
         ],
         15000,
       );
-      await unlink(join('/tmp', `${worker.workerData.file}.png`));
+      await unlink(join('/tmp', `${file}.png`));
       worker.parentPort!.postMessage(200);
       process.exit(0);
     } else if (a!.mime.startsWith('font')) {

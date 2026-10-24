@@ -21,6 +21,8 @@ function shouldCompress(req: Express.Request, res: Express.Response): boolean {
   return _filter(req, res);
 }
 
+const activeWorkers: Set<worker.Worker> = new Set();
+
 const port: number =
   8100 + (!process.env.INSTANCE ? 0 : Number(process.env.INSTANCE));
 const app = Express();
@@ -38,13 +40,17 @@ app.all('/', async (req, res) => {
 });
 
 app.get('/:file', async (req, res) => {
+  if (activeWorkers.size >= Number(process.env.MAX_WORKERS)) {
+    res.status(429).end();
+    return;
+  }
   const inputPath = join(process.env.BASE_UPLOAD_PATH!, req.params.file);
   const outputPath = join(process.env.OUTPUT_PATH!, `${req.params.file}.webp`);
   if (existsSync(outputPath)) {
     console.debug(
       `Preview cached for ${req.params.file}, not generating another.`,
     );
-    res.append('Content-Type', 'image/webp').sendFile(outputPath);
+    res.append('Content-Type', 'image/webp').status(200).sendFile(outputPath);
     return;
   }
   if (!existsSync(inputPath)) {
@@ -54,13 +60,16 @@ app.get('/:file', async (req, res) => {
   }
   let thumbWorker = new worker.Worker('./dist/worker.js', {
     workerData: {
-      file: req.params.file,
+      inputPath,
+      outputPath,
     },
   });
+  activeWorkers.add(thumbWorker);
   thumbWorker.on('online', () => {
     console.debug(`Generating preview for ${req.params.file}...`);
   });
   thumbWorker.on('exit', (code) => {
+    activeWorkers.delete(thumbWorker);
     if (code === 0)
       console.debug(`Done generating preview for ${req.params.file}.`);
     else console.debug(`Unable to generate preview for ${req.params.file}`);
@@ -69,7 +78,7 @@ app.get('/:file', async (req, res) => {
     if (status !== 200) {
       res.status(status).end();
     } else {
-      res.append('Content-Type', 'image/webp').sendFile(outputPath);
+      res.append('Content-Type', 'image/webp').status(201).sendFile(outputPath);
     }
   });
 });
