@@ -49,7 +49,7 @@ app.get('/:file', async (req, res) => {
     return;
   }
   const inputPath = join(base, req.params.file);
-  if (!SAFE_NAME.test(req.params.file) || dirname(req.params.file) !== base) {
+  if (!SAFE_NAME.test(req.params.file) || dirname(inputPath) !== base) {
     res.status(400).end();
     return;
   }
