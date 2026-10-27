@@ -5,8 +5,10 @@ import Logger, { Level } from './Logger';
 import compression, { filter as _filter } from 'compression';
 import DevelopmentCORS from './DevelopmentCORS';
 import { config } from 'dotenv';
-import { join } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 const packageJSON = JSON.parse(readFileSync('./package.json', 'utf8'));
+
+const SAFE_NAME = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)*$/;
 
 config();
 
@@ -35,16 +37,22 @@ if (process.env.DEBUG) {
 
 if (!existsSync(process.env.OUTPUT_PATH!)) mkdirSync(process.env.OUTPUT_PATH!);
 
-app.all('/', async (req, res) => {
+app.all('/', async (_, res) => {
   res.status(200).json({ hello: 'world', version: packageJSON.version });
 });
+
+const base = resolve(process.env.BASE_UPLOAD_PATH!);
 
 app.get('/:file', async (req, res) => {
   if (activeWorkers.size >= Number(process.env.MAX_WORKERS ?? 50)) {
     res.status(429).end();
     return;
   }
-  const inputPath = join(process.env.BASE_UPLOAD_PATH!, req.params.file);
+  const inputPath = join(base, req.params.file);
+  if (!SAFE_NAME.test(req.params.file) || dirname(req.params.file) !== base) {
+    res.status(400).end();
+    return;
+  }
   const outputPath = join(process.env.OUTPUT_PATH!, `${req.params.file}.webp`);
   if (existsSync(outputPath)) {
     console.debug(
@@ -83,6 +91,6 @@ app.get('/:file', async (req, res) => {
   });
 });
 
-app.listen(port, '127.0.0.1', () => {
+app.listen(port, process.env.HOST ?? '127.0.0.1', () => {
   console.log(`Listening on port ${port}.`);
 });
