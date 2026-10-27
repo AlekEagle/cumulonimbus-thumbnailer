@@ -1,10 +1,10 @@
 {
   "name": "cumulonimbus-thumbnailer",
-  "version": "2.4.2",
+  "version": "2.4.3",
   "description": "The thumbnail generation server for Cumulonimbus.",
   "main": "dist/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc"
   },
   "repository": {
     "type": "git",
