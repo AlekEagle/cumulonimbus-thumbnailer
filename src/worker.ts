@@ -1,7 +1,7 @@
 import { execFile } from 'child_process';
 import worker from 'worker_threads';
 import { fileTypeFromFile } from 'file-type';
-import puppeteer, { Browser } from 'puppeteer';
+import puppeteer, { Browser, HTTPRequest } from 'puppeteer';
 import { unlink, chmod } from 'fs/promises';
 import { config } from 'dotenv';
 import { join, dirname, basename } from 'node:path';
@@ -80,6 +80,25 @@ async function hasAudioStream(file: string): Promise<boolean> {
   }
 }
 
+function browserRequestInterceptor(inputPath: string) {
+  return function (req: HTTPRequest) {
+    const u = req.url();
+    if (
+      u.startsWith(`file://${dirname(inputPath)}/`) || // the doc + relative local assets
+      u.startsWith(`file://${process.cwd()}/font-renderer.html`) || // font-renderer.html (font path only)
+      u.startsWith('data:')
+    ) {
+      return req.continue();
+    }
+    req.abort(); // http/https/ws/wss/ftp/chrome:// — everything else
+  };
+}
+
+const DEFAULT_PUPPETEER_ARGS = [
+  '--disable-background-networking',
+  '--host-resolver-rules=MAP * ~NOTFOUND',
+];
+
 // This is a worker thread, so we can't run it as the main thread
 if (worker.isMainThread) throw new Error("can't be ran as main thread");
 (async function () {
@@ -94,26 +113,11 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
     }
     if (file.match(/\.html?$/)) {
       const browser = await puppeteer.launch({
-          args: [
-            // Layer 2: stop Chromium itself phoning home (update checks, telemetry)
-            '--disable-background-networking',
-            // Layer 3: kill all DNS resolution — hostname-based SSRF dies instantly
-            '--host-resolver-rules=MAP * ~NOTFOUND',
-          ],
+          args: DEFAULT_PUPPETEER_ARGS,
         }),
         page = await browser.newPage();
       await page.setRequestInterception(true);
-      page.on('request', (req) => {
-        const u = req.url();
-        if (
-          u.startsWith(`file://${dirname(inputPath)}/`) || // the doc + relative local assets
-          u.startsWith(`file://${process.cwd()}/`) || // font-renderer.html (font path only)
-          u.startsWith('data:')
-        ) {
-          return req.continue();
-        }
-        req.abort(); // http/https/ws/wss/ftp/chrome:// — everything else
-      });
+      page.on('request', browserRequestInterceptor(inputPath));
       page.setViewport({ width: 256, height: 256 });
       restartTimeout(browser);
       await page.goto(`file://${inputPath}`, {
@@ -183,8 +187,12 @@ if (worker.isMainThread) throw new Error("can't be ran as main thread");
       worker.parentPort!.postMessage(200);
       process.exit(0);
     } else if (a!.mime.startsWith('font')) {
-      const browser = await puppeteer.launch(),
+      const browser = await puppeteer.launch({
+          args: DEFAULT_PUPPETEER_ARGS,
+        }),
         page = await browser.newPage();
+      await page.setRequestInterception(true);
+      page.on('request', browserRequestInterceptor(inputPath));
       page.setViewport({ width: 256, height: 256 });
       restartTimeout(browser);
       await page.goto(
